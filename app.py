@@ -456,48 +456,46 @@ freq  =  252  (daily)  |  52  (weekly)
         c1, c2, c3 = st.columns(3)
         c1.info(f"**Period:** {cfg['timeframe']}")
         c2.info(f"**Frequency:** {cfg['freq_label']}")
-        c3.info(f"**Rf baseline:** {cfg['rf_label']}")
+        c3.info(f"**Rf:** {cfg['rf_label']}")
 
-        # ── KPI cards ──
+        # ── Compact KPI table (mobile-friendly) ──
         st.markdown('<div class="sec-hdr">Key Performance Indicators</div>',
                     unsafe_allow_html=True)
-        kpi_cols = st.columns(len(asset_tks))
+        kpi_rows = []
+        for tk in asset_tks:
+            res = results[tk]
+            a, b, r2 = res["alpha_annual_pct"], res["beta"], res["r_squared"]
+            kpi_rows.append({
+                "Ticker":       tk,
+                "Ann. Alpha":   f"{a:+.2f}%",
+                "Beta (β)":     f"{b:.4f}",
+                "R²":           f"{r2:.4f}",
+                "Signal":       "✅ Outperforms" if a >= 0 else "❌ Underperforms",
+                "Volatility":   "Aggressive" if abs(b) > 1 else "Defensive",
+            })
+        st.dataframe(pd.DataFrame(kpi_rows), use_container_width=True, hide_index=True)
+
+        # ── Per-ticker detail (collapsed by default — tap to expand) ──
+        st.markdown('<div class="sec-hdr">Ticker Detail</div>', unsafe_allow_html=True)
         for i, tk in enumerate(asset_tks):
             res = results[tk]
-            a   = res["alpha_annual_pct"]
-            b   = res["beta"]
-            r2  = res["r_squared"]
-            with kpi_cols[i]:
-                st.markdown(f"#### {tk}")
-                st.metric(
-                    "Annualized Alpha (α)",
-                    f"{a:+.2f}%",
-                    delta="Outperforms benchmark" if a >= 0 else "Underperforms benchmark",
-                    delta_color="normal" if a >= 0 else "inverse",
-                )
-                st.metric(
-                    "Beta (β)",
-                    f"{b:.4f}",
-                    delta="Aggressive (>1×)" if abs(b) > 1 else "Defensive (<1×)",
-                    delta_color="off",
-                )
-                st.metric(
-                    "R² (Fit Quality)",
-                    f"{r2:.4f}",
-                    delta=f"{r2 * 100:.1f}% explained by {BENCHMARK}",
-                    delta_color="off",
-                )
-                if a >= 0:
-                    st.success(f"✅ Positive α: +{a:.2f}%/yr above CAPM expectation")
-                else:
-                    st.error(f"❌ Negative α: {a:.2f}%/yr below CAPM expectation")
+            a, b, r2 = res["alpha_annual_pct"], res["beta"], res["r_squared"]
+            with st.expander(f"{tk}  |  α {a:+.2f}%  ·  β {b:.4f}  ·  R² {r2:.4f}",
+                             expanded=False):
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Ann. Alpha (α)", f"{a:+.2f}%",
+                          delta="Outperforms" if a >= 0 else "Underperforms",
+                          delta_color="normal" if a >= 0 else "inverse")
+                m2.metric("Beta (β)", f"{b:.4f}",
+                          delta="Aggressive" if abs(b) > 1 else "Defensive",
+                          delta_color="off")
+                m3.metric("R²", f"{r2:.4f}",
+                          delta=f"{r2*100:.1f}% from {BENCHMARK}",
+                          delta_color="off")
 
-        st.divider()
-
-        # ── Cumulative return chart ──
-        st.markdown('<div class="sec-hdr">Cumulative Returns</div>',
-                    unsafe_allow_html=True)
-        st.plotly_chart(plot_cumulative(price_df), use_container_width=True)
+        # ── Cumulative return chart (collapsed by default) ──
+        with st.expander("📈  Cumulative Returns  (tap to expand)", expanded=False):
+            st.plotly_chart(plot_cumulative(price_df), use_container_width=True)
 
         # ── Formula reminder ──
         with st.expander("📐  Formula reference"):
