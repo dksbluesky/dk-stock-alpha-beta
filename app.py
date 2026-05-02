@@ -11,12 +11,32 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 from typing import Optional
 
+try:
+    from PIL import Image as PILImage
+    _favicon = PILImage.open("static/icon.png")
+except Exception:
+    _favicon = "📈"
+
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Financial Dashboard — Alpha & Beta",
-    page_icon="📈",
+    page_icon=_favicon,
     layout="wide",
     initial_sidebar_state="expanded",
+)
+
+# ── Apple Touch Icon injection (iPhone "Add to Home Screen") ─────────────────
+_ICON_URL = (
+    "https://raw.githubusercontent.com/dksbluesky/"
+    "dk-stock-alpha-beta/main/static/icon.png"
+)
+st.markdown(
+    f"""
+    <link rel="apple-touch-icon" sizes="512x512" href="{_ICON_URL}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{_ICON_URL}">
+    <link rel="shortcut icon" type="image/png"   href="{_ICON_URL}">
+    """,
+    unsafe_allow_html=True,
 )
 
 # ── Global style ──────────────────────────────────────────────────────────────
