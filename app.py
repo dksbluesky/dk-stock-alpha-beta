@@ -66,6 +66,50 @@ st.markdown("""
 BENCHMARK = "^TWII"
 COLORS = ["#2196F3", "#FF9800", "#4CAF50", "#F44336"]
 
+# ── Fugle real-time helpers ───────────────────────────────────────────────────
+
+def is_market_open() -> bool:
+    """True if Taiwan Stock Exchange is currently open (09:00–13:30 CST, Mon–Fri)."""
+    from datetime import timezone, timedelta
+    tz_cst = timezone(timedelta(hours=8))
+    now = datetime.now(tz_cst)
+    if now.weekday() >= 5:
+        return False
+    open_t  = now.replace(hour=9,  minute=0,  second=0, microsecond=0)
+    close_t = now.replace(hour=13, minute=30, second=0, microsecond=0)
+    return open_t <= now <= close_t
+
+
+def _fugle_symbol(tw_ticker: str) -> str:
+    """Convert '2330.TW' / '006208.TWO' → '2330' / '006208' for Fugle."""
+    return tw_ticker.split(".")[0]
+
+
+@st.cache_data(ttl=60)
+def _fetch_fugle_price(symbol: str, api_key: str) -> Optional[float]:
+    """Real-time price from Fugle intraday quote endpoint (60-second cache)."""
+    try:
+        import requests
+        url = f"https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/{symbol}"
+        resp = requests.get(url, headers={"X-API-KEY": api_key}, timeout=5)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        return (data.get("closePrice")
+                or data.get("lastPrice")
+                or data.get("lastTrade", {}).get("price"))
+    except Exception:
+        return None
+
+
+def _extend_with_live(price_series: pd.Series, live_price: float) -> pd.Series:
+    """Append today's live price to historical EOD series for BIAS calculation."""
+    today = pd.Timestamp.now().normalize()
+    extended = price_series.copy()
+    extended[today] = live_price
+    return extended.sort_index()
+
+
 # ── Data helpers ──────────────────────────────────────────────────────────────
 
 def _normalise_index(s: pd.Series) -> pd.Series:
@@ -560,11 +604,22 @@ freq  =  252  (daily)  |  52  (weekly)
             tk: _download_raw(tk, cfg["start"], cfg["end"])
             for tk in asset_tks
         }
-        bias_dict = {
-            tk: compute_bias(s)
-            for tk, s in raw_series.items()
-            if s is not None
-        }
+
+        # Fugle real-time override during market hours
+        fugle_key  = st.secrets.get("fugle", {}).get("api_key", None)
+        market_open = is_market_open()
+        bias_is_live = False
+
+        bias_dict = {}
+        for tk, s in raw_series.items():
+            if s is None:
+                continue
+            if market_open and fugle_key:
+                live = _fetch_fugle_price(_fugle_symbol(tk), fugle_key)
+                if live:
+                    s = _extend_with_live(s, live)
+                    bias_is_live = True
+            bias_dict[tk] = compute_bias(s)
 
         st.session_state["state"] = dict(
             price_df=price_df,
@@ -574,6 +629,7 @@ freq  =  252  (daily)  |  52  (weekly)
             cfg=cfg,
             f_mult=f_mult,
             bias_dict=bias_dict,
+            bias_is_live=bias_is_live,
         )
 
     # ── Load from session ──
@@ -584,7 +640,8 @@ freq  =  252  (daily)  |  52  (weekly)
     asset_tks = s["asset_tks"]
     cfg       = s["cfg"]
     f_mult    = s["f_mult"]
-    bias_dict = s.get("bias_dict", {})
+    bias_dict    = s.get("bias_dict", {})
+    bias_is_live = s.get("bias_is_live", False)
 
     if not asset_tks:
         st.warning("No valid asset tickers found in the aligned data.")
@@ -663,7 +720,8 @@ freq  =  252  (daily)  |  52  (weekly)
             })
         if bias_rows:
             st.dataframe(color_table(pd.DataFrame(bias_rows)), use_container_width=True, hide_index=True)
-            st.caption("Thresholds — Bias_5: ±3%  |  Bias_20: ±5%  (Taiwan market convention)")
+            live_tag = "🔴 LIVE (Fugle real-time)" if bias_is_live else f"📊 EOD — Data as of {price_df.index[-1].strftime('%m/%d')}"
+            st.caption(f"{live_tag}  |  Thresholds — Bias_5: ±3%  |  Bias_20: ±5%")
             with st.expander("📊  BIAS Chart  (tap to expand)", expanded=False):
                 b_tab5, b_tab20 = st.tabs(["5-Day BIAS", "20-Day BIAS"])
                 with b_tab5:
