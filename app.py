@@ -344,7 +344,7 @@ def build_sidebar() -> dict:
 
         # ── Tickers ──
         st.subheader("Tickers  (up to 4)")
-        defaults = ["00981A.TW", "0050.TW", "", ""]
+        defaults = ["", "", "", ""]
         tickers = []
         for i in range(4):
             val = st.text_input(f"Ticker {i + 1}", value=defaults[i], key=f"tk{i}")
