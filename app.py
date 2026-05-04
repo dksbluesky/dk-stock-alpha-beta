@@ -75,7 +75,7 @@ def _normalise_index(s: pd.Series) -> pd.Series:
     return s
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=900)
 def _download_cached(ticker: str, start: str, end: str) -> pd.Series:
     """Adjusted close prices (for Alpha/Beta returns) — raises on failure."""
     df = yf.download(ticker, start=start, end=end, auto_adjust=True,
@@ -87,7 +87,7 @@ def _download_cached(ticker: str, start: str, end: str) -> pd.Series:
     return _normalise_index(df["Close"].rename(ticker))
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=900)
 def _download_raw_cached(ticker: str, start: str, end: str) -> pd.Series:
     """Raw (unadjusted) close prices (for BIAS) — raises on failure."""
     df = yf.download(ticker, start=start, end=end, auto_adjust=False,
@@ -602,10 +602,12 @@ freq  =  252  (daily)  |  52  (weekly)
     # ═══════════════════════════════════════════════════════════════════
     with tab1:
         # Context bar
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         c1.info(f"**Period:** {cfg['timeframe']}")
         c2.info(f"**Frequency:** {cfg['freq_label']}")
         c3.info(f"**Rf:** {cfg['rf_label']}")
+        latest_date = price_df.index[-1].strftime("%Y-%m-%d")
+        c4.info(f"**Data as of:** {latest_date}")
 
         # ── Compact KPI table (mobile-friendly) ──
         st.markdown('<div class="sec-hdr">Key Performance Indicators</div>',
