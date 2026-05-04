@@ -69,19 +69,26 @@ COLORS = ["#2196F3", "#FF9800", "#4CAF50", "#F44336"]
 # ── Data helpers ──────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600)
+def _download_cached(ticker: str, start: str, end: str) -> pd.Series:
+    """Download adjusted close prices — raises on failure so cache doesn't store None."""
+    df = yf.download(ticker, start=start, end=end, auto_adjust=True,
+                     progress=False, threads=False)
+    if df.empty:
+        raise ValueError(f"No data returned for {ticker}")
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    close = df["Close"].rename(ticker)
+    # Handle both tz-aware and tz-naive indices from yfinance
+    close.index = pd.to_datetime(close.index)
+    if close.index.tz is not None:
+        close.index = close.index.tz_convert(None)
+    return close
+
+
 def _download(ticker: str, start: str, end: str) -> Optional[pd.Series]:
-    """Download adjusted close prices for one ticker; return None on failure."""
+    """Wrapper — returns None on failure without caching the failure."""
     try:
-        df = yf.download(ticker, start=start, end=end, auto_adjust=True,
-                         progress=False, threads=False)
-        if df.empty:
-            return None
-        # Flatten multi-level columns produced by newer yfinance versions
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        close = df["Close"].rename(ticker)
-        close.index = pd.to_datetime(close.index).tz_localize(None)
-        return close
+        return _download_cached(ticker, start, end)
     except Exception:
         return None
 
@@ -460,7 +467,10 @@ freq  =  252  (daily)  |  52  (weekly)
 
         failed = [tk for tk, s in raw.items() if s is None]
         if failed:
-            st.warning(f"Could not fetch: {', '.join(failed)}")
+            st.error(
+                f"⚠️ Failed to fetch data for: **{', '.join(failed)}**  \n"
+                f"These tickers are excluded. Check the symbol or try again."
+            )
         raw = {k: v for k, v in raw.items() if v is not None}
 
         if BENCHMARK not in raw:
