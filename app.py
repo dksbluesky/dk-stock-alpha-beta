@@ -68,27 +68,47 @@ COLORS = ["#2196F3", "#FF9800", "#4CAF50", "#F44336"]
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
 
+def _normalise_index(s: pd.Series) -> pd.Series:
+    s.index = pd.to_datetime(s.index)
+    if s.index.tz is not None:
+        s.index = s.index.tz_convert(None)
+    return s
+
+
 @st.cache_data(ttl=3600)
 def _download_cached(ticker: str, start: str, end: str) -> pd.Series:
-    """Download adjusted close prices — raises on failure so cache doesn't store None."""
+    """Adjusted close prices (for Alpha/Beta returns) — raises on failure."""
     df = yf.download(ticker, start=start, end=end, auto_adjust=True,
                      progress=False, threads=False)
     if df.empty:
-        raise ValueError(f"No data returned for {ticker}")
+        raise ValueError(f"No data for {ticker}")
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
-    close = df["Close"].rename(ticker)
-    # Handle both tz-aware and tz-naive indices from yfinance
-    close.index = pd.to_datetime(close.index)
-    if close.index.tz is not None:
-        close.index = close.index.tz_convert(None)
-    return close
+    return _normalise_index(df["Close"].rename(ticker))
+
+
+@st.cache_data(ttl=3600)
+def _download_raw_cached(ticker: str, start: str, end: str) -> pd.Series:
+    """Raw (unadjusted) close prices (for BIAS) — raises on failure."""
+    df = yf.download(ticker, start=start, end=end, auto_adjust=False,
+                     progress=False, threads=False)
+    if df.empty:
+        raise ValueError(f"No data for {ticker}")
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    return _normalise_index(df["Close"].rename(ticker))
 
 
 def _download(ticker: str, start: str, end: str) -> Optional[pd.Series]:
-    """Wrapper — returns None on failure without caching the failure."""
     try:
         return _download_cached(ticker, start, end)
+    except Exception:
+        return None
+
+
+def _download_raw(ticker: str, start: str, end: str) -> Optional[pd.Series]:
+    try:
+        return _download_raw_cached(ticker, start, end)
     except Exception:
         return None
 
@@ -535,7 +555,16 @@ freq  =  252  (daily)  |  52  (weekly)
             res["alpha_annual_pct"] = annualise_alpha(res["alpha_period"], cfg["freq"])
             results[tk] = res
 
-        bias_dict = {tk: compute_bias(price_df[tk]) for tk in asset_tks}
+        # Raw (unadjusted) prices for BIAS — matches what traders see on screen
+        raw_series = {
+            tk: _download_raw(tk, cfg["start"], cfg["end"])
+            for tk in asset_tks
+        }
+        bias_dict = {
+            tk: compute_bias(s)
+            for tk, s in raw_series.items()
+            if s is not None
+        }
 
         st.session_state["state"] = dict(
             price_df=price_df,
