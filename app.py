@@ -162,6 +162,29 @@ def annualise_alpha(alpha_period: float, freq: str) -> float:
     return ((1 + alpha_period) ** mult - 1) * 100
 
 
+def compute_bias(price_series: pd.Series) -> pd.DataFrame:
+    """Compute MA5, MA20, Bias_5, Bias_20 from daily close prices."""
+    ma5  = price_series.rolling(window=5).mean()
+    ma20 = price_series.rolling(window=20).mean()
+    return pd.DataFrame({
+        "Close":   price_series,
+        "MA5":     ma5,
+        "MA20":    ma20,
+        "Bias_5":  (price_series - ma5)  / ma5  * 100,
+        "Bias_20": (price_series - ma20) / ma20 * 100,
+    })
+
+
+def bias_signal(bias: float, window: int) -> str:
+    hi = 3.0 if window == 5 else 5.0
+    lo = -hi
+    if bias > hi:   return "🔴 Overbought"
+    if bias > hi/2: return "🟡 Slightly High"
+    if bias < lo:   return "🟢 Oversold"
+    if bias < lo/2: return "🟡 Slightly Low"
+    return "⚪ Neutral"
+
+
 # ── Plotly builders ───────────────────────────────────────────────────────────
 
 def plot_cumulative(price_df: pd.DataFrame) -> go.Figure:
@@ -257,6 +280,33 @@ def plot_single_scatter(tk: str, res: dict, color: str) -> go.Figure:
         yaxis_title=f"{tk} Excess Return (%)",
         height=370, template="plotly_white",
         legend=dict(orientation="h", y=1.1),
+    )
+    return fig
+
+
+def plot_bias_chart(bias_dict: dict, window: int) -> go.Figure:
+    key = f"Bias_{window}"
+    hi  = 3.0 if window == 5 else 5.0
+    fig = go.Figure()
+    for i, (tk, df_b) in enumerate(bias_dict.items()):
+        series = df_b[key].dropna()
+        fig.add_trace(go.Scatter(
+            x=series.index, y=series,
+            mode="lines", name=tk,
+            line=dict(color=COLORS[i % 4], width=2),
+        ))
+    fig.add_hline(y=hi,  line_dash="dash", line_color="#ef4444",
+                  opacity=0.6, annotation_text=f"Overbought +{hi}%",
+                  annotation_position="top left")
+    fig.add_hline(y=-hi, line_dash="dash", line_color="#22c55e",
+                  opacity=0.6, annotation_text=f"Oversold -{hi}%",
+                  annotation_position="bottom left")
+    fig.add_hline(y=0, line_dash="dot", line_color="#aaa", opacity=0.4)
+    fig.update_layout(
+        title=f"MA{window} BIAS 乖離率 (%)",
+        xaxis_title="Date", yaxis_title="BIAS (%)",
+        height=360, template="plotly_white", hovermode="x unified",
+        legend=dict(orientation="h", y=1.05, xanchor="right", x=1),
     )
     return fig
 
@@ -439,6 +489,8 @@ freq  =  252  (daily)  |  52  (weekly)
             res["alpha_annual_pct"] = annualise_alpha(res["alpha_period"], cfg["freq"])
             results[tk] = res
 
+        bias_dict = {tk: compute_bias(price_df[tk]) for tk in asset_tks}
+
         st.session_state["state"] = dict(
             price_df=price_df,
             ret_df=ret_df,
@@ -446,6 +498,7 @@ freq  =  252  (daily)  |  52  (weekly)
             asset_tks=asset_tks,
             cfg=cfg,
             f_mult=f_mult,
+            bias_dict=bias_dict,
         )
 
     # ── Load from session ──
@@ -456,6 +509,7 @@ freq  =  252  (daily)  |  52  (weekly)
     asset_tks = s["asset_tks"]
     cfg       = s["cfg"]
     f_mult    = s["f_mult"]
+    bias_dict = s.get("bias_dict", {})
 
     if not asset_tks:
         st.warning("No valid asset tickers found in the aligned data.")
@@ -512,6 +566,35 @@ freq  =  252  (daily)  |  52  (weekly)
                 m3.metric("R²", f"{r2:.4f}",
                           delta=f"{r2*100:.1f}% from {BENCHMARK}",
                           delta_color="off")
+
+        # ── BIAS 乖離率 ──
+        st.markdown('<div class="sec-hdr">BIAS 乖離率 — Moving Average Deviation</div>',
+                    unsafe_allow_html=True)
+        bias_rows = []
+        for tk in asset_tks:
+            df_b = bias_dict.get(tk, pd.DataFrame()).dropna()
+            if df_b.empty:
+                continue
+            b5  = df_b["Bias_5"].iloc[-1]
+            b20 = df_b["Bias_20"].iloc[-1]
+            bias_rows.append({
+                "Ticker":       tk,
+                "Bias_5 (%)":  f"{b5:+.2f}%",
+                "5D Signal":   bias_signal(b5,  window=5),
+                "Bias_20 (%)": f"{b20:+.2f}%",
+                "20D Signal":  bias_signal(b20, window=20),
+            })
+        if bias_rows:
+            st.dataframe(pd.DataFrame(bias_rows), use_container_width=True, hide_index=True)
+            st.caption("Thresholds — Bias_5: ±3%  |  Bias_20: ±5%  (Taiwan market convention)")
+            with st.expander("📊  BIAS Chart  (tap to expand)", expanded=False):
+                b_tab5, b_tab20 = st.tabs(["5-Day BIAS", "20-Day BIAS"])
+                with b_tab5:
+                    st.plotly_chart(plot_bias_chart(bias_dict, window=5),
+                                    use_container_width=True)
+                with b_tab20:
+                    st.plotly_chart(plot_bias_chart(bias_dict, window=20),
+                                    use_container_width=True)
 
         # ── Cumulative return chart (collapsed by default) ──
         with st.expander("📈  Cumulative Returns  (tap to expand)", expanded=False):
