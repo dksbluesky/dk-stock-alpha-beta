@@ -169,6 +169,42 @@ def annualise_alpha(alpha_period: float, freq: str) -> float:
     return ((1 + alpha_period) ** mult - 1) * 100
 
 
+def _cell_color(val: object) -> str:
+    """Return CSS for a single cell based on its string content."""
+    v = str(val)
+    GREEN  = "background-color:#d1fae5;color:#065f46;font-weight:600"
+    RED    = "background-color:#fee2e2;color:#991b1b;font-weight:600"
+    YELLOW = "background-color:#fef9c3;color:#854d0e;font-weight:600"
+    ORANGE = "background-color:#ffedd5;color:#9a3412;font-weight:600"
+    LGREY  = "background-color:#f3f4f6;color:#374151"
+    if any(k in v for k in ["Outperforms", "Oversold", "Defensive"]):
+        return GREEN
+    if any(k in v for k in ["Underperforms", "Overbought"]):
+        return RED
+    if "Slightly High" in v:
+        return ORANGE
+    if "Slightly Low" in v:
+        return YELLOW
+    if "Aggressive" in v:
+        return ORANGE
+    if "Neutral" in v:
+        return LGREY
+    if v.startswith("+") and "%" in v:
+        return GREEN
+    if v.startswith("-") and "%" in v:
+        return RED
+    return ""
+
+
+def color_table(df: pd.DataFrame) -> object:
+    """Apply _cell_color to every cell; works on pandas 2.0 and 2.1+."""
+    styler = df.style
+    try:
+        return styler.map(_cell_color)          # pandas >= 2.1
+    except AttributeError:
+        return styler.applymap(_cell_color)     # pandas 2.0
+
+
 def compute_bias(price_series: pd.Series) -> pd.DataFrame:
     """Compute MA5, MA20, Bias_5, Bias_20 from daily close prices."""
     ma5  = price_series.rolling(window=5).mean()
@@ -557,7 +593,7 @@ freq  =  252  (daily)  |  52  (weekly)
                 "Signal":       "✅ Outperforms" if a >= 0 else "❌ Underperforms",
                 "Volatility":   "Aggressive" if abs(b) > 1 else "Defensive",
             })
-        st.dataframe(pd.DataFrame(kpi_rows), use_container_width=True, hide_index=True)
+        st.dataframe(color_table(pd.DataFrame(kpi_rows)), use_container_width=True, hide_index=True)
 
         # ── Per-ticker detail (collapsed by default — tap to expand) ──
         st.markdown('<div class="sec-hdr">Ticker Detail</div>', unsafe_allow_html=True)
@@ -595,7 +631,7 @@ freq  =  252  (daily)  |  52  (weekly)
                 "20D Signal":  bias_signal(b20, window=20),
             })
         if bias_rows:
-            st.dataframe(pd.DataFrame(bias_rows), use_container_width=True, hide_index=True)
+            st.dataframe(color_table(pd.DataFrame(bias_rows)), use_container_width=True, hide_index=True)
             st.caption("Thresholds — Bias_5: ±3%  |  Bias_20: ±5%  (Taiwan market convention)")
             with st.expander("📊  BIAS Chart  (tap to expand)", expanded=False):
                 b_tab5, b_tab20 = st.tabs(["5-Day BIAS", "20-Day BIAS"])
