@@ -1,48 +1,159 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Financial Dashboard — Alpha &amp; Beta</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📈 Financial Dashboard — Alpha &amp; Beta</title>
 
-  <!-- iPhone home screen icon -->
-  <link rel="apple-touch-icon" sizes="512x512"
-        href="https://raw.githubusercontent.com/dksbluesky/dk-stock-alpha-beta/main/static/icon.png">
-  <link rel="apple-touch-icon" sizes="180x180"
-        href="https://raw.githubusercontent.com/dksbluesky/dk-stock-alpha-beta/main/static/icon.png">
-  <link rel="shortcut icon" type="image/png"
-        href="https://raw.githubusercontent.com/dksbluesky/dk-stock-alpha-beta/main/static/icon.png">
+<link rel="apple-touch-icon" sizes="512x512"
+      href="https://raw.githubusercontent.com/dksbluesky/dk-stock-alpha-beta/main/static/icon.png">
+<link rel="apple-touch-icon" sizes="180x180"
+      href="https://raw.githubusercontent.com/dksbluesky/dk-stock-alpha-beta/main/static/icon.png">
+<link rel="shortcut icon" type="image/png"
+      href="https://raw.githubusercontent.com/dksbluesky/dk-stock-alpha-beta/main/static/icon.png">
 
-  <!-- Auto-redirect to Streamlit app -->
-  <meta http-equiv="refresh"
-        content="0; url=https://dk-stock-alpha-beta-kzpmubsfjomf2spbjvpbzn.streamlit.app" />
-
-  <style>
-    body {
-      margin: 0;
-      background: #12264a;
-      color: #fff;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      gap: 20px;
-    }
-    img { width: 96px; height: 96px; border-radius: 22px; }
-    p   { margin: 0; font-size: 1rem; opacity: 0.7; }
-    a   { color: #60a5fa; }
-  </style>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <img src="https://raw.githubusercontent.com/dksbluesky/dk-stock-alpha-beta/main/static/icon.png"
-       alt="Dashboard icon" />
-  <p>Redirecting to the dashboard…</p>
-  <p>
-    <a href="https://dk-stock-alpha-beta-kzpmubsfjomf2spbjvpbzn.streamlit.app">
-      Click here if not redirected
-    </a>
-  </p>
+<div class="container">
+  <h1>📈 Financial Dashboard — Alpha &amp; Beta</h1>
+  <h2>Jensen's Alpha · CAPM Beta · R² · Benchmark: ^TWII | Taiwan market focus</h2>
+
+  <div class="settings">
+    <h3>⚙️ Controls</h3>
+    <div class="row">
+      <label>Ticker 1 <input type="text" id="tk0" placeholder="e.g. 2330.TW"></label>
+      <label>Ticker 2 <input type="text" id="tk1" placeholder="e.g. 0050.TW"></label>
+      <label>Ticker 3 <input type="text" id="tk2" placeholder="optional"></label>
+      <label>Ticker 4 <input type="text" id="tk3" placeholder="optional"></label>
+    </div>
+    <p class="caption">Up to 4 Taiwan tickers (e.g. 2330.TW, 006208.TWO). Benchmark (fixed): <strong>^TWII</strong></p>
+
+    <div class="row">
+      <label>Analysis Period
+        <select id="timeframe">
+          <option value="short">Short Term (≤ 1Y)</option>
+          <option value="medium" selected>Medium Term (1 – 2.5Y)</option>
+          <option value="long">Long Term (&gt; 2.5Y)</option>
+        </select>
+      </label>
+      <label>Return Frequency
+        <select id="frequency">
+          <option value="D">Daily</option>
+          <option value="W" selected>Weekly</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="row">
+      <label>Risk-Free Rate Baseline
+        <select id="rfOption">
+          <option value="fixed" selected>Option A: Fixed Rate</option>
+          <option value="0050">Option B: 0050 Dividend Yield</option>
+        </select>
+      </label>
+      <label id="rfFixedRow">Annual Rf (%) <input type="number" id="rfPct" value="1.7" step="0.1" min="0" max="10"></label>
+    </div>
+
+    <button id="runBtn">🚀 Run Analysis</button>
+  </div>
+
+  <div id="status"></div>
+
+  <div id="results" class="hidden">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="tab1">📊 Dashboard Summary</button>
+      <button class="tab-btn" data-tab="tab2">📉 Regression Analysis</button>
+      <button class="tab-btn" data-tab="tab3">📋 Performance Data</button>
+    </div>
+
+    <!-- ── Tab 1 ── -->
+    <div id="tab1" class="tab-content active">
+      <div id="contextBar" class="context-bar"></div>
+
+      <div class="sec-hdr">Key Performance Indicators</div>
+      <div class="table-wrap"><table id="kpiTable"></table></div>
+
+      <div class="sec-hdr">Ticker Detail</div>
+      <div id="tickerDetail"></div>
+
+      <div class="sec-hdr">BIAS 乖離率 — Moving Average Deviation</div>
+      <div class="table-wrap"><table id="biasTable"></table></div>
+      <p class="caption" id="biasCaption"></p>
+      <details id="biasChartDetails">
+        <summary>📊 BIAS Chart (tap to expand)</summary>
+        <div class="chart-tabs">
+          <button class="chart-tab-btn active" data-chart="bias5">5-Day BIAS</button>
+          <button class="chart-tab-btn" data-chart="bias20">20-Day BIAS</button>
+        </div>
+        <div id="bias5" class="chart-box chart-box-toggle">
+          <canvas id="bias5Canvas"></canvas>
+        </div>
+        <div id="bias20" class="chart-box chart-box-toggle hidden-chart">
+          <canvas id="bias20Canvas"></canvas>
+        </div>
+      </details>
+
+      <details>
+        <summary>📈 Cumulative Returns (tap to expand)</summary>
+        <div class="chart-box"><canvas id="cumCanvas"></canvas></div>
+      </details>
+
+      <details>
+        <summary>📐 Formula reference</summary>
+        <div class="formula-box">
+          β = Cov(Rₚ − Rf, Rm − Rf) / Var(Rm − Rf)<br>
+          α = intercept [OLS regression of excess returns]<br>
+          Jensen's α (ann.) = (1 + α_period)^freq − 1<br>
+          R² = fraction of asset variance explained by benchmark<br><br>
+          Rf_period = (1 + Rf_annual)^(1/freq) − 1<br><br>
+          Date alignment uses the intersection of trading dates across all assets and ^TWII,
+          so exchange holidays and typhoon closure days are dropped automatically.
+        </div>
+      </details>
+    </div>
+
+    <!-- ── Tab 2 ── -->
+    <div id="tab2" class="tab-content">
+      <div class="sec-hdr">Excess-Return Scatter</div>
+      <p class="caption" id="scatterCaption"></p>
+      <div id="scatterGrid" class="scatter-grid"></div>
+
+      <div class="sec-hdr">Regression Summary</div>
+      <div class="table-wrap"><table id="regTable"></table></div>
+
+      <div class="sec-hdr">Per-Asset Detail</div>
+      <div id="perAssetDetail"></div>
+    </div>
+
+    <!-- ── Tab 3 ── -->
+    <div id="tab3" class="tab-content">
+      <div class="data-grid">
+        <div>
+          <div class="sec-hdr">Adjusted Close Prices</div>
+          <div class="table-wrap scroll-table"><table id="priceTable"></table></div>
+        </div>
+        <div>
+          <div class="sec-hdr" id="returnsHeader">Returns (%)</div>
+          <div class="table-wrap scroll-table"><table id="returnsTable"></table></div>
+        </div>
+      </div>
+
+      <div class="sec-hdr">Descriptive Statistics</div>
+      <div class="table-wrap"><table id="statsTable"></table></div>
+
+      <div class="sec-hdr">Correlation Matrix</div>
+      <div class="table-wrap"><table id="corrTable"></table></div>
+
+      <div class="sec-hdr">Export</div>
+      <div class="row">
+        <button id="dlPrices">📥 Download Prices (CSV)</button>
+        <button id="dlReturns">📥 Download Returns (CSV)</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="app.js"></script>
 </body>
 </html>
